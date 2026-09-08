@@ -71,29 +71,54 @@ tg_downloader/
 ## Quickstart & Installation
 
 ### 1. Requirements
-- Python 3.11 or higher (Python 3.12 recommended)
-- `uv` package manager
-- `ruff` linter and formatter
-- `ty` static type checker
+- **Python:** 3.11 or higher (Python 3.12 recommended)
+- **`uv` Package Manager:** Fast Python package and venv manager.
+  - Install via official script: `curl -LsSf https://astral.sh/uv/install.sh | sh` (or `pip install uv`)
+- **`make` Build Utility:** (Optional, but recommended for simplified shortcut commands):
+  - **Debian / Ubuntu:** `sudo apt install make` (or `sudo apt install build-essential`)
+  - **Fedora / RHEL:** `sudo dnf install make`
+  - **Arch Linux:** `sudo pacman -S make`
+  - **macOS:** `xcode-select --install` or `brew install make`
+  - **Windows:** `winget install GnuWin32.Make` or `choco install make` (or use the direct `uv` onboarding commands below)
 
-### 2. Rapid Onboarding with `Makefile`
+---
+
+### 2. Onboarding Options
+
+#### Option A: Rapid Onboarding with `Makefile` (Recommended)
+If `make` is installed on your system:
 ```bash
-# Clone the repository and install dependencies in editable mode
+# 1. Create venv and install dependencies in editable mode
 make install
 
-# Verify environment and hardware cryptographic acceleration
+# 2. Verify environment and native cryptographic hardware acceleration
 make doctor
 
-# Run test suite
+# 3. Run full test suite
 make test
 
-# Run quality gate verification (ruff format + ruff check + ty check)
+# 4. Run quality gate verification (ruff format + ruff check + ty check)
 make check
 ```
 
-Alternatively, run commands directly via `uv`:
+#### Option B: Direct Onboarding with `uv` (No `make` required)
+If you prefer not to install or use `make`:
 ```bash
-uv run tg-downloader --help
+# 1. Create a Python 3.12 virtual environment
+uv venv --python 3.12 .venv
+
+# 2. Install package in editable mode with development dependencies
+uv pip install -e ".[dev]"
+
+# 3. Verify environment and native cryptographic hardware acceleration
+uv run tg-downloader doctor
+
+# 4. Run test suite
+uv run pytest -v tests/
+
+# 5. Run static analysis and lint quality gate
+uv run ruff check .
+uv run ty check
 ```
 
 ---
