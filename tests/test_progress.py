@@ -91,6 +91,7 @@ def test_download_ui_group_progress() -> None:
     # File 1: Downloaded
     ui.start_file("file1.mp4", 1000)
     ui.update_file_progress(750, 1000)
+    assert ui._current_file_task is not None
     task1 = ui.progress._tasks[ui._current_file_task]
     assert task1.percentage == 75.0
     ui.complete_file("file1.mp4", 1000)
