@@ -324,6 +324,33 @@ tg-downloader download https://t.me/c/3419616253/3/23 -o ./downloads
 
 ---
 
+### 5. Course & Syllabus Sequential Reorganizer (`rename`)
+
+For downloaded courses or channels where filenames are chaotic, truncated (such as Telegram's 64-character limit resulting in `@..._Notes_Lectu (1).pdf`), or out of order, the `rename` command synchronizes local files with Telegram's message timeline:
+
+```bash
+# Preview proposed renames with a Rich summary table (Safe Dry-Run):
+tg-downloader rename https://t.me/c/3419616253 --dir "./downloads/Goclasses Gate DA" --dry-run
+
+# Interactively review and confirm sequential renames:
+tg-downloader rename https://t.me/c/3419616253 --dir "./downloads/Goclasses Gate DA"
+
+# Filter for a specific topic / sub-group:
+tg-downloader rename https://t.me/c/3419616253 --dir "./downloads" --topic "Aptitude"
+
+# Apply directly without interactive confirmation:
+tg-downloader rename https://t.me/c/3419616253 --dir "./downloads/Goclasses Gate DA" -y
+```
+
+**Core Capabilities:**
+- **Exact Byte-Size Matching:** Maps downloaded files to their Telegram source messages using byte size signatures.
+- **Truncated Title Resolution:** Automatically repairs cut-off notes/slides (e.g., `..._Notes_Lectu`) by pairing them with the preceding lecture video.
+- **Watermark & Spam Stripping:** Cleans `@channel_tags`, `@usernames`, HTML entities (`&amp;`), and weird punctuation.
+- **Redundant Duplicate Purging:** Automatically finds and purges identical re-downloaded copies (`(1).pdf`, `(22).pdf`) via SHA-256 fingerprinting.
+- **Collision-Safe Two-Pass Execution:** Prevents accidental overwrites by renaming through temporary buffers.
+
+---
+
 ## CLI Command & Options Reference
 
 ### Commands Summary
@@ -335,6 +362,21 @@ tg-downloader download https://t.me/c/3419616253/3/23 -o ./downloads
 | `whoami` | Display active user profile, user ID, phone, and connected Data Center. |
 | `doctor` | Run environment and cryptographic hardware acceleration diagnostics. |
 | `download` | Download unrestricted and restricted media from posts, channels, or chats. |
+| `rename` | Reorganize and rename previously downloaded files in syllabus/chronological order. |
+
+### `rename` Options Reference
+
+| Option / Flag | Short | Default | Description |
+| :--- | :---: | :---: | :--- |
+| `target` *(argument)* | | *required* | Telegram channel URL, forum supergroup link, username, or peer ID. |
+| `--dir` | `-d` | `./downloads` | Root downloads directory or course folder containing downloaded files. |
+| `--topic` | | `None` | Filter renaming to a specific topic ID or title query in forum supergroups. |
+| `--digits` | | `3` | Number of digits for zero-padded sequence prefix (e.g. `3` -> `001`). |
+| `--dry-run` | | `False` | Preview proposed renames and duplicates without modifying files on disk. |
+| `--yes` | `-y` | `False` | Automatically execute renames without interactive confirmation prompt. |
+| `--purge-duplicates` / `--keep-duplicates` | | `True` | Automatically remove redundant duplicate copies of files. |
+| `--session-name` | | `tg_downloader` | Custom session profile name to use. |
+| `--verbose` | `-v` | `False` | Enable verbose debug logging. |
 
 ### `download` Options Reference
 

@@ -17,6 +17,7 @@ from tg_downloader.config import Settings
 from tg_downloader.core.auth import AuthManager
 from tg_downloader.core.client import create_telegram_client
 from tg_downloader.core.errors import TGDownloaderError
+from tg_downloader.core.renamer import ChannelRenamer, TopicRenamePlan
 from tg_downloader.core.resolver import TargetResolver
 from tg_downloader.core.scraper import ChannelScraper, ScrapeFilter
 from tg_downloader.engine.parallel import ParallelDownloader
@@ -547,6 +548,234 @@ def download_cmd(
         raise typer.Exit(code=1) from e
     except KeyboardInterrupt:
         console.print("\n[yellow]Download interrupted by user. Partial progress saved (.part).[/]")
+        raise typer.Exit(code=130) from None
+
+
+@app.command(name="rename")
+def rename_cmd(
+    target: Annotated[
+        str,
+        typer.Argument(help="Telegram channel URL, forum supergroup link, username, or peer ID"),
+    ],
+    dir: Annotated[
+        Path,
+        typer.Option(
+            "--dir",
+            "-d",
+            help="Root downloads directory or course folder containing downloaded files",
+        ),
+    ] = Path("./downloads"),
+    topic: Annotated[
+        str | None,
+        typer.Option(
+            "--topic",
+            help="Filter renaming to a specific topic ID or title query in forum supergroups",
+        ),
+    ] = None,
+    digits: Annotated[
+        int,
+        typer.Option(
+            "--digits",
+            min=2,
+            max=6,
+            help="Number of digits for zero-padded sequence prefix (e.g. 3 -> 001)",
+        ),
+    ] = 3,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Preview proposed renames and duplicates without modifying files on disk",
+        ),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Automatically execute renames without interactive confirmation prompt",
+        ),
+    ] = False,
+    purge_duplicates: Annotated[
+        bool,
+        typer.Option(
+            "--purge-duplicates/--keep-duplicates",
+            help="Automatically remove redundant duplicate copies of files",
+        ),
+    ] = True,
+    session_name: Annotated[
+        str, typer.Option("--session-name", help="Custom session name")
+    ] = "tg_downloader",
+    verbose: Annotated[
+        bool, typer.Option("--verbose", "-v", help="Enable verbose debug logging")
+    ] = False,
+) -> None:
+    """Reorganize and rename previously downloaded files in syllabus/chronological order."""
+    configure_logging(verbose)
+    settings = Settings(session_name=session_name)
+
+    async def _run() -> None:
+        client = create_telegram_client(settings)
+        auth = AuthManager(client, settings, console=console)
+
+        try:
+            await auth.ensure_authorized()
+
+            console.print(f"[bold cyan]Resolving channel target:[/] {target}...")
+            resolved = await TargetResolver.resolve(client, target)
+
+            forum_badge = " [bold magenta][Forum Supergroup][/]" if resolved.is_forum else ""
+            console.print(
+                f"[green]✓ Target Resolved:[/] [bold]{resolved.title}[/]{forum_badge} "
+                f"({'@' + resolved.username if resolved.username else f'ID: {resolved.peer_id}'})"
+            )
+
+            renamer = ChannelRenamer(client)
+            topics_map: dict[int, str] = {}
+            if resolved.is_forum:
+                topics_map = await renamer.scraper.get_forum_topics(resolved.entity)
+
+            # Filter topics if specified by user
+            if topic:
+                topic_cleaned = topic.strip()
+                filtered_topics: dict[int, str] = {}
+                for t_id, t_title in topics_map.items():
+                    if (topic_cleaned.isdigit() and t_id == int(topic_cleaned)) or (
+                        topic_cleaned.lower() in t_title.lower()
+                    ):
+                        filtered_topics[t_id] = t_title
+                topics_map = filtered_topics
+
+            matched_dirs = renamer.find_topic_directories(
+                base_dir=dir,
+                channel_title=resolved.title,
+                topics_map=topics_map,
+                is_forum=resolved.is_forum,
+            )
+
+            if not matched_dirs:
+                console.print(
+                    f"[yellow]No matching local directories found under '{dir}'.[/]\n"
+                    "Ensure your downloaded course directory or topic folder is specified via --dir."
+                )
+                return
+
+            console.print(f"[cyan]Found {len(matched_dirs)} matching local topic directories.[/]\n")
+
+            plans: list[TopicRenamePlan] = []
+            total_candidates = 0
+            total_duplicates = 0
+
+            for topic_id, topic_title, topic_path in matched_dirs:
+                with console.status(
+                    f"[bold cyan]Scanning and matching files for '{topic_title}'..."
+                ):
+                    plan = await renamer.create_plan_for_topic(
+                        entity=resolved.entity,
+                        topic_id=topic_id,
+                        topic_name=topic_title,
+                        topic_dir=topic_path,
+                        prefix_digits=digits,
+                        purge_duplicates=purge_duplicates,
+                    )
+                plans.append(plan)
+
+                # Render table for this topic
+                table = Table(
+                    title=f"Rename Plan: {topic_title} ({topic_path})",
+                    show_header=True,
+                    header_style="bold cyan",
+                    expand=True,
+                )
+                table.add_column("Original Filename", style="dim", overflow="fold", ratio=4)
+                table.add_column("Size", justify="right", style="magenta", no_wrap=True)
+                table.add_column(
+                    "Proposed New Filename", style="bold green", overflow="fold", ratio=5
+                )
+                table.add_column("Status / Action", style="white", ratio=3)
+
+                topic_active_cands = 0
+                topic_dups = 0
+
+                for cand in plan.candidates:
+                    size_str = format_bytes(cand.file_size)
+                    if cand.is_duplicate:
+                        orig_name = cand.duplicate_of.name if cand.duplicate_of else "original"
+                        table.add_row(
+                            cand.local_path.name,
+                            size_str,
+                            "[strike red]PURGE DUPLICATE[/]",
+                            f"[red]Duplicate of {orig_name}[/]",
+                        )
+                        topic_dups += 1
+                    else:
+                        table.add_row(
+                            cand.local_path.name,
+                            size_str,
+                            cand.new_name,
+                            f"[green]{cand.reason}[/]",
+                        )
+                        topic_active_cands += 1
+
+                console.print(table)
+                total_candidates += topic_active_cands
+                total_duplicates += topic_dups
+
+                if plan.unmatched_files:
+                    console.print(
+                        f"[yellow]ℹ {len(plan.unmatched_files)} local files were not matched "
+                        "and will remain unchanged.[/]"
+                    )
+                console.print()
+
+            if total_candidates == 0 and total_duplicates == 0:
+                console.print("[yellow]No files required renaming or duplicate cleanup.[/]")
+                return
+
+            summary_text = (
+                f"Total: {total_candidates} files to rename, {total_duplicates} duplicates to purge"
+            )
+            console.print(Panel(summary_text, style="bold cyan"))
+
+            if dry_run:
+                console.print(
+                    "[yellow]Dry-run mode active. No changes have been applied to disk.[/]"
+                )
+                return
+
+            if not yes:
+                from rich.prompt import Confirm
+
+                confirmed = Confirm.ask(
+                    "Proceed with renaming and reorganizing these files?", default=False
+                )
+                if not confirmed:
+                    console.print("[yellow]Operation cancelled by user. No files were modified.[/]")
+                    return
+
+            # Apply all plans
+            grand_renamed = 0
+            grand_purged = 0
+            for plan in plans:
+                r_cnt, p_cnt = ChannelRenamer.apply_plan(plan, purge_duplicates=purge_duplicates)
+                grand_renamed += r_cnt
+                grand_purged += p_cnt
+
+            console.print(
+                f"[bold green]✓ Successfully renamed {grand_renamed} files and purged "
+                f"{grand_purged} duplicates![/]"
+            )
+
+        finally:
+            await client.disconnect()
+
+    try:
+        asyncio.run(_run())
+    except TGDownloaderError as e:
+        console.print(f"[bold red]Rename Error:[/] {e}")
+        raise typer.Exit(code=1) from e
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Rename operation interrupted by user.[/]")
         raise typer.Exit(code=130) from None
 
 
