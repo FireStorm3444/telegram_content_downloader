@@ -33,6 +33,7 @@ ENV/
 # Sessions and credentials
 *.session
 *.session-journal
+*.dc_keys.json
 .env
 .env.*
 !*.env.example

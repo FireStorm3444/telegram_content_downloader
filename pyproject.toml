@@ -4,10 +4,15 @@ version = "0.1.0"
 description = "High-Performance Telegram Media Downloader CLI"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 authors = [
-    { name = "Autonomous Systems Engineer" }
+    { name = "FireStorm" }
 ]
+
+[project.urls]
+Homepage = "https://github.com/FireStorm3444/telegram_content_downloader"
+Repository = "https://github.com/FireStorm3444/telegram_content_downloader"
+Issues = "https://github.com/FireStorm3444/telegram_content_downloader/issues"
 dependencies = [
     "telethon>=1.36.0",
     "cryptg>=0.4.0",
